@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import {
@@ -38,18 +39,25 @@ export function useProjects() {
 }
 
 export function useProjectDetail(id: number) {
-  const { setCurrentProject } = useProjectStore()
+  // 用 selector 订阅单个 setter，避免订阅整个 store 触发多余 re-render
+  const setCurrentProject = useProjectStore((s) => s.setCurrentProject)
 
-  return useQuery({
+  const query = useQuery({
     queryKey: projectKeys.detail(id),
     queryFn:  () => getProject(id),
     staleTime: 10_000,
     enabled:  !!id,
-    select: (data) => {
-      setCurrentProject(data)
-      return data
-    },
   })
+
+  // 副作用要放 effect 里：select() 每次渲染都会跑，
+  // 在其中调用 setCurrentProject 会触发 Sidebar 重渲染并形成无限循环
+  useEffect(() => {
+    if (query.data) {
+      setCurrentProject(query.data)
+    }
+  }, [query.data, setCurrentProject])
+
+  return query
 }
 
 export function useSceneJSON(projectId: number, enabled = true) {
@@ -85,13 +93,12 @@ export function useProjectJobs(projectId: number) {
 
 export function useCreateProject() {
   const queryClient = useQueryClient()
-  const navigate = useNavigate()
 
+  // 不在这里强制跳转，由调用方决定后续动作（如 NewProjectPage 要进 step=1 上传 CAD）
   return useMutation({
     mutationFn: createProject,
-    onSuccess: (project) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: projectKeys.lists() })
-      navigate(`/projects/${project.id}`)
     },
   })
 }

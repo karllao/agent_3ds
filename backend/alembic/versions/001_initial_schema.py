@@ -16,7 +16,7 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # 创建 project_status 枚举
+    # 创建 project_status 枚举（create_type=False 防止列绑定时再次自动创建）
     project_status = postgresql.ENUM(
         "created",
         "cad_uploaded",
@@ -28,28 +28,18 @@ def upgrade() -> None:
         "completed",
         "failed",
         name="project_status",
+        create_type=False,
     )
-    project_status.create(op.get_bind())
+    project_status.create(op.get_bind(), checkfirst=True)
 
-    # 创建 projects 表
+    # 创建 projects 表（status 列复用上面的 ENUM 实例，避免触发重复 CREATE TYPE）
     op.create_table(
         "projects",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
         sa.Column("name", sa.String(255), nullable=False),
         sa.Column(
             "status",
-            sa.Enum(
-                "created",
-                "cad_uploaded",
-                "parsing",
-                "parsed",
-                "generating",
-                "generated",
-                "exporting",
-                "completed",
-                "failed",
-                name="project_status",
-            ),
+            project_status,
             nullable=False,
             server_default="created",
         ),
@@ -75,27 +65,26 @@ def upgrade() -> None:
     op.create_index("ix_projects_name", "projects", ["name"])
     op.create_index("ix_projects_status", "projects", ["status"])
 
-    # 创建 job_status 枚举
+    # 创建 job_status 枚举（create_type=False 防止列绑定时再次自动创建）
     job_status = postgresql.ENUM(
-        "pending", "running", "waiting_user", "completed", "failed", name="job_status"
+        "pending",
+        "running",
+        "waiting_user",
+        "completed",
+        "failed",
+        name="job_status",
+        create_type=False,
     )
-    job_status.create(op.get_bind())
+    job_status.create(op.get_bind(), checkfirst=True)
 
-    # 创建 jobs 表
+    # 创建 jobs 表（status 列复用上面的 ENUM 实例）
     op.create_table(
         "jobs",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
         sa.Column("project_id", sa.Integer(), nullable=False),
         sa.Column(
             "status",
-            sa.Enum(
-                "pending",
-                "running",
-                "waiting_user",
-                "completed",
-                "failed",
-                name="job_status",
-            ),
+            job_status,
             nullable=False,
             server_default="pending",
         ),

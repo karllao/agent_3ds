@@ -76,24 +76,57 @@ class MaxWorkerClient:
         """
         提交脚本执行任务到 max_worker。
 
+        backend 与 max_worker 通常运行在不同机器（前者 Linux 容器，后者 Windows），
+        没有共享文件系统。因此：
+          - 把脚本 **文本内容** 一并发过去，让 worker 写到它自己的 WORK_DIR 再执行
+          - script_path 仅作为调试/日志用的源路径，worker 不会拿它去打开文件
+          - output_max_path 同理：传过去的是 basename，worker 会把 .max 写到它本地
+
         Args:
-            script_path:     服务器上 .ms 脚本文件的绝对路径。
-            output_max_path: 脚本执行完毕后 .max 文件的保存路径。
+            script_path:     backend 侧 .ms 文件的绝对路径（用于读取内容）。
+            output_max_path: 期望的 .max 文件路径（worker 端会取其 basename）。
             timeout:         max_worker 端的执行超时（秒）。
 
         Returns:
             包含 ``task_id`` 和 ``status`` 的字典。
 
         Raises:
-            MaxWorkerError: 请求失败或返回非 2xx 状态码。
+            MaxWorkerError: 读取脚本失败、请求失败或返回非 2xx 状态码。
         """
+        # 读取脚本内容（backend 本地路径）
+        try:
+            with open(script_path, "r", encoding="utf-8") as f:
+                script_content = f.read()
+        except OSError as exc:
+            raise MaxWorkerError(
+                f"读取 MAXScript 失败: {script_path} ({exc})"
+            ) from exc
+
+        # output 只发文件名，worker 自己决定落地目录
+        from pathlib import PurePosixPath, PureWindowsPath
+
+        out_basename = (
+            PureWindowsPath(output_max_path).name
+            if "\\" in output_max_path
+            else PurePosixPath(output_max_path).name
+        ) or "scene.max"
+
         payload = {
+            # 新字段：脚本文本（worker 落地到本地后再执行）
+            "script_content": script_content,
+            "script_basename": (
+                PurePosixPath(script_path).name or "scene.ms"
+            ),
+            # 兼容字段：仍保留路径用于日志
             "script_path": script_path,
-            "output_max_path": output_max_path,
-            "timeout": timeout,
+            "output_max_path": out_basename,
+            "timeout_seconds": timeout,
         }
         logger.info(
-            "[MaxWorkerClient] Submitting script: {} → {}", script_path, output_max_path
+            "[MaxWorkerClient] Submitting script: src={} ({} chars) → out={}",
+            script_path,
+            len(script_content),
+            out_basename,
         )
         try:
             async with self._get_client() as client:

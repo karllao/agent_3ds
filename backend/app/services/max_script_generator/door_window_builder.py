@@ -47,6 +47,8 @@ from __future__ import annotations
 import math
 from typing import Any
 
+from ._normalize import xyz as _xyz
+
 # ── 门框尺寸常量 ─────────────────────────────────────────────
 _DOOR_FRAME_WIDTH: float = 60.0  # 门框截面宽度 (mm)
 _DOOR_FRAME_DEPTH: float = 120.0  # 门框截面深度（墙厚方向，mm）
@@ -217,7 +219,7 @@ class DoorWindowScriptBuilder:
 
         # ── 解析参数 ────────────────────────────────────────────
         center = door.get("center", [0.0, 0.0, 0.0])
-        cx, cy, cz = float(center[0]), float(center[1]), float(center[2])
+        cx, cy, cz = _xyz(center)
         width = float(door.get("width", 900.0))
         height = float(door.get("height", 2100.0))
         rot_deg = float(door.get("wall_rotation", 0.0))
@@ -398,7 +400,7 @@ class DoorWindowScriptBuilder:
 
         # ── 解析参数 ────────────────────────────────────────────
         center = win.get("center", [0.0, 0.0, 0.0])
-        cx, cy, cz = float(center[0]), float(center[1]), float(center[2])
+        cx, cy, cz = _xyz(center)
         width = float(win.get("width", 1500.0))
         height = float(win.get("height", 1200.0))
         rot_deg = float(win.get("wall_rotation", 0.0))

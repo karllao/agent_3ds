@@ -48,6 +48,8 @@ from __future__ import annotations
 import math
 from typing import Any
 
+from ._normalize import xy as _xy
+
 
 class WallScriptBuilder:
     """生成建造墙体的 MAXScript 代码段。"""
@@ -98,9 +100,9 @@ class WallScriptBuilder:
             wall_id = wall.get("id", f"w{idx}")
             mat_key = wall.get("material", "white_paint")
 
-            # 解析坐标
-            sx, sy = float(wall["start"][0]), float(wall["start"][1])
-            ex, ey = float(wall["end"][0]), float(wall["end"][1])
+            # 解析坐标（兼容 [x,y] / (x,y) / {x,y} 三种 AI 输出格式）
+            sx, sy = _xy(wall["start"])
+            ex, ey = _xy(wall["end"])
             thickness = float(wall.get("thickness", 200))
             height = float(wall.get("height", 2800))
 

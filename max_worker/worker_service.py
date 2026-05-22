@@ -75,15 +75,30 @@ class TaskStatus(str, Enum):
 class ExecuteRequest(BaseModel):
     """POST /execute 请求体。"""
 
+    script_content: str = Field(
+        default="",
+        description=(
+            "MAXScript 文本内容。若提供则 worker 会写到本地 WORK_DIR 再执行，"
+            "这是跨机器部署（backend 在 Linux 容器、worker 在 Windows）的推荐方式。"
+        ),
+    )
+    script_basename: str = Field(
+        default="scene.ms",
+        description="落地的脚本文件名（仅 basename，不含路径）",
+    )
     script_path: str = Field(
-        ...,
-        description="MAXScript (.ms) 文件的完整路径（必须在本机上可访问）",
+        default="",
+        description=(
+            "兼容字段：本机已存在的 MAXScript 路径。仅当 script_content 为空时使用。"
+        ),
         examples=[r"C:\output\scene.ms"],
     )
     output_max_path: str = Field(
         default="",
-        description="3ds Max 输出 .max 文件路径（为空则由脚本自决定）",
-        examples=[r"C:\output\scene.max"],
+        description=(
+            "3ds Max 输出 .max 文件路径或文件名。若为相对/无路径，则落地到 WORK_DIR 下"
+        ),
+        examples=[r"C:\output\scene.max", "scene.max"],
     )
     timeout_seconds: int = Field(
         default=cfg.TIMEOUT_SECONDS,
@@ -215,24 +230,11 @@ async def execute_maxscript(
     _: None = Depends(verify_token),
 ) -> ExecuteResponse:
     """
-    接收 MAXScript 文件路径，在后台异步启动 3dsmaxbatch.exe 执行。
+    接收 MAXScript（文本内容或本机路径），在后台异步启动 3dsmaxbatch.exe 执行。
 
     - 立即返回 task_id
     - 通过 GET /status/{task_id} 轮询结果
     """
-    # 前置验证
-    script_path = Path(request.script_path)
-    if not script_path.exists():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Script file not found: {request.script_path}",
-        )
-    if not script_path.suffix.lower() in (".ms", ".mse", ".mcr"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Script file must have extension .ms, .mse, or .mcr",
-        )
-
     # 检查 3dsmaxbatch.exe 是否存在
     if not Path(cfg.MAX_EXE_PATH).exists():
         raise HTTPException(
@@ -240,13 +242,67 @@ async def execute_maxscript(
             detail=f"3dsmaxbatch.exe not found at: {cfg.MAX_EXE_PATH}",
         )
 
-    # 创建任务
+    # 提前生成 task_id，方便用作工作子目录名
     task_id = str(uuid.uuid4())
+    task_workdir = Path(cfg.WORK_DIR) / task_id
+    task_workdir.mkdir(parents=True, exist_ok=True)
+
+    # ── 解析脚本来源 ────────────────────────────────────────────
+    if request.script_content:
+        # 跨机器场景：内容已在请求里，落地到本地
+        basename = request.script_basename or "scene.ms"
+        if not basename.lower().endswith((".ms", ".mse", ".mcr")):
+            basename += ".ms"
+        script_path = task_workdir / basename
+        try:
+            script_path.write_text(request.script_content, encoding="utf-8")
+        except OSError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to write script to {script_path}: {exc}",
+            )
+        logger.info(
+            f"Script written to local workdir: {script_path} "
+            f"({len(request.script_content)} chars)"
+        )
+    elif request.script_path:
+        # 兼容模式：本机已有脚本文件
+        script_path = Path(request.script_path)
+        if not script_path.exists():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Script file not found: {request.script_path}",
+            )
+        if script_path.suffix.lower() not in (".ms", ".mse", ".mcr"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Script file must have extension .ms, .mse, or .mcr",
+            )
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Either 'script_content' or 'script_path' must be provided",
+        )
+
+    # ── 解析输出路径 ────────────────────────────────────────────
+    # 如果 output_max_path 是绝对路径且其所在目录在本机存在 → 用它
+    # 否则取 basename 落到 task_workdir 下
+    raw_out = (request.output_max_path or "scene.max").strip()
+    out_path_obj = Path(raw_out)
+    if out_path_obj.is_absolute() and out_path_obj.parent.exists():
+        output_max_path = str(out_path_obj.resolve())
+    else:
+        out_name = out_path_obj.name or "scene.max"
+        if not out_name.lower().endswith(".max"):
+            out_name += ".max"
+        output_max_path = str(task_workdir / out_name)
+
+    # 创建任务
     task: dict[str, Any] = {
         "task_id": task_id,
         "status": TaskStatus.PENDING,
         "script_path": str(script_path.resolve()),
-        "output_max_path": request.output_max_path,
+        "output_max_path": output_max_path,
         "start_time": time.time(),
         "end_time": None,
         "elapsed_seconds": None,
@@ -258,7 +314,9 @@ async def execute_maxscript(
         "extra_args": request.extra_args,
     }
     _task_store[task_id] = task
-    logger.info(f"Task created: {task_id} | script={request.script_path}")
+    logger.info(
+        f"Task created: {task_id} | script={script_path} | out={output_max_path}"
+    )
 
     # 异步后台执行
     asyncio.create_task(_run_maxscript_task(task_id))

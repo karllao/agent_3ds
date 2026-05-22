@@ -67,6 +67,8 @@ def _create_llm(
         effective_temp = temperature if temperature != 0.2 else settings.llm_temperature
         openai_key = settings.openai_api_key
         anthropic_key = settings.anthropic_api_key
+        openai_base_url = settings.openai_base_url
+        anthropic_base_url = settings.anthropic_base_url
     except Exception:
         # 回退到环境变量
         effective_provider = provider or os.getenv("DEFAULT_LLM_PROVIDER", "openai")
@@ -74,29 +76,38 @@ def _create_llm(
         effective_temp = temperature
         openai_key = os.getenv("OPENAI_API_KEY", "")
         anthropic_key = os.getenv("ANTHROPIC_API_KEY", "")
+        openai_base_url = os.getenv("OPENAI_BASE_URL", "")
+        anthropic_base_url = os.getenv("ANTHROPIC_BASE_URL", "")
 
     logger.info(
-        f"[Graph] 初始化 LLM：provider={effective_provider}, model={effective_model}"
+        f"[Graph] 初始化 LLM：provider={effective_provider}, model={effective_model}, "
+        f"base_url={(anthropic_base_url if effective_provider == 'anthropic' else openai_base_url) or '<default>'}"
     )
 
     if effective_provider == "anthropic":
         from langchain_anthropic import ChatAnthropic
 
-        return ChatAnthropic(
-            model=effective_model or "claude-3-5-sonnet-20241022",
-            api_key=anthropic_key,
-            temperature=effective_temp,
-            max_tokens=4096,
-        )
+        kwargs: dict[str, Any] = {
+            "model": effective_model or "claude-3-5-sonnet-20241022",
+            "api_key": anthropic_key,
+            "temperature": effective_temp,
+            "max_tokens": 4096,
+        }
+        if anthropic_base_url:
+            kwargs["base_url"] = anthropic_base_url
+        return ChatAnthropic(**kwargs)
     else:
         from langchain_openai import ChatOpenAI
 
-        return ChatOpenAI(
-            model=effective_model or "gpt-4o",
-            api_key=openai_key,
-            temperature=effective_temp,
-            max_tokens=4096,
-        )
+        kwargs: dict[str, Any] = {
+            "model": effective_model or "gpt-4o",
+            "api_key": openai_key,
+            "temperature": effective_temp,
+            "max_tokens": 4096,
+        }
+        if openai_base_url:
+            kwargs["base_url"] = openai_base_url
+        return ChatOpenAI(**kwargs)
 
 
 # ── 图构建函数 ────────────────────────────────────────────────────────────────

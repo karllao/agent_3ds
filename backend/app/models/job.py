@@ -13,11 +13,13 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 
 class JobStatus(str, enum.Enum):
+    """与 DB ENUM `job_status` 严格对齐，见 alembic 001_initial_schema.py"""
+
     PENDING = "pending"  # 等待 Worker 拾取
     RUNNING = "running"  # 正在执行
-    SUCCESS = "success"  # 执行成功
+    WAITING_USER = "waiting_user"  # 等待用户回答 AI 追问
+    COMPLETED = "completed"  # 执行成功
     FAILED = "failed"  # 执行失败
-    REVOKED = "revoked"  # 被手动撤销
 
 
 class JobStep(str, enum.Enum):
@@ -51,13 +53,24 @@ class Job(Base):
 
     # ── 状态 ──────────────────────────────────────────────────────────────
     status: Mapped[JobStatus] = mapped_column(
-        Enum(JobStatus, name="job_status"),
+        Enum(
+            JobStatus,
+            name="job_status",
+            values_callable=lambda enum_cls: [m.value for m in enum_cls],
+            create_type=False,
+        ),
         nullable=False,
         default=JobStatus.PENDING,
         index=True,
     )
+    # DB 里 step 实际是 VARCHAR(100)（见迁移），这里仍用 Enum 校验，但写入小写 value
     step: Mapped[JobStep | None] = mapped_column(
-        Enum(JobStep, name="job_step"),
+        Enum(
+            JobStep,
+            name="job_step",
+            values_callable=lambda enum_cls: [m.value for m in enum_cls],
+            create_type=False,
+        ),
         nullable=True,
         comment="当前或最后执行的步骤",
     )

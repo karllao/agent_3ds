@@ -177,7 +177,7 @@ class JobService:
             logger.warning("[JobService] mark_job_completed: Job {} not found", job_id)
             return
 
-        job.status = JobStatus.SUCCESS
+        job.status = JobStatus.COMPLETED
         job.step = OrmJobStep.MAX_EXPORT
         job.progress = 100
         job.error_message = None

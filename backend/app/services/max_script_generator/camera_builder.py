@@ -26,6 +26,8 @@ from __future__ import annotations
 import math
 from typing import Any
 
+from ._normalize import xyz as _xyz
+
 
 class CameraScriptBuilder:
     """生成 Target Camera 的 MAXScript 代码段。"""
@@ -58,8 +60,8 @@ class CameraScriptBuilder:
 
             pos = cam.get("position", [0, -3000, 1600])
             tgt = cam.get("target", [0, 0, 1000])
-            px, py, pz = float(pos[0]), float(pos[1]), float(pos[2])
-            tx, ty, tz = float(tgt[0]), float(tgt[1]), float(tgt[2])
+            px, py, pz = _xyz(pos)
+            tx, ty, tz = _xyz(tgt)
 
             # FOV 与焦距换算
             fov_deg = cam.get("fov", None)

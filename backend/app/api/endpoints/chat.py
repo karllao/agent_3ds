@@ -232,7 +232,7 @@ async def send_message(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="删除对话（级联删除所有消息）",
 )
-async def delete_conversation(conversation_id: int, db: DbSession) -> None:
+async def delete_conversation(conversation_id: int, db: DbSession):
     conv = await _get_conversation_or_404(conversation_id, db)
     await db.delete(conv)
     logger.info("Conversation deleted: id={}", conversation_id)

@@ -227,7 +227,7 @@ async def get_project(project_id: int, db: DbSession) -> ProjectDetailResponse:
     status_code=status.HTTP_204_NO_CONTENT,
     summary="删除项目（级联删除任务和对话）",
 )
-async def delete_project(project_id: int, db: DbSession) -> None:
+async def delete_project(project_id: int, db: DbSession):
     proj = await _get_project_or_404(project_id, db)
     await db.delete(proj)
     await db.commit()

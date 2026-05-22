@@ -328,7 +328,7 @@ async def get_cad_preview(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="删除已上传的 CAD 文件",
 )
-async def delete_cad_file(project_id: int, db: DbSession) -> None:
+async def delete_cad_file(project_id: int, db: DbSession):
     import aiofiles.os
 
     project = await _get_project_or_404(project_id, db)

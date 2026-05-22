@@ -1,11 +1,25 @@
 import apiClient from './client'
 import type { Project, CADPreview, SceneJSON, Job, UploadProgress } from '@/types'
 
+// 后端分页包装：{ total, page, page_size, items }
+interface ProjectListResponse {
+  total: number
+  page: number
+  page_size: number
+  items: Project[]
+}
+
+interface JobListResponse {
+  project_id: number
+  total: number
+  items: Job[]
+}
+
 // ─── Projects CRUD ────────────────────────────────────────────────────────────
 
 export async function getProjects(): Promise<Project[]> {
-  const res = await apiClient.get<Project[]>('/projects')
-  return res.data
+  const res = await apiClient.get<ProjectListResponse>('/projects')
+  return res.data.items ?? []
 }
 
 export async function getProject(id: number): Promise<Project> {
@@ -115,8 +129,8 @@ export function getPreviewImageUrl(projectId: number): string {
 // ─── Jobs ─────────────────────────────────────────────────────────────────────
 
 export async function getProjectJobs(projectId: number): Promise<Job[]> {
-  const res = await apiClient.get<Job[]>(`/projects/${projectId}/jobs`)
-  return res.data
+  const res = await apiClient.get<JobListResponse>(`/projects/${projectId}/jobs`)
+  return res.data.items ?? []
 }
 
 // ─── Chat ─────────────────────────────────────────────────────────────────────

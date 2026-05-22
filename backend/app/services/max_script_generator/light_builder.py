@@ -57,6 +57,8 @@ from __future__ import annotations
 import math
 from typing import Any
 
+from ._normalize import xyz as _xyz
+
 # ---------------------------------------------------------------------------
 # 色温转 RGB（Planckian locus 近似）
 # ---------------------------------------------------------------------------
@@ -188,7 +190,7 @@ class LightScriptBuilder:
     ) -> dict:
         """筒灯：FreeSpot，向下照射，暖色温。"""
         pos = light.get("position", [0, 0, 2750])
-        px, py, pz = float(pos[0]), float(pos[1]), float(pos[2])
+        px, py, pz = _xyz(pos)
         hotspot = float(light.get("hotspot", 40))
         falloff = float(light.get("falloff", 60))
         var = f"lt_downlight_{num}"
@@ -228,8 +230,8 @@ class LightScriptBuilder:
 
         pt_idx = 0
         for seg_i in range(len(path_pts) - 1):
-            p0 = [float(v) for v in path_pts[seg_i]]
-            p1 = [float(v) for v in path_pts[seg_i + 1]]
+            p0 = list(_xyz(path_pts[seg_i]))
+            p1 = list(_xyz(path_pts[seg_i + 1]))
             seg_len = math.dist(p0, p1)
             if seg_len < 1:
                 continue
@@ -262,7 +264,7 @@ class LightScriptBuilder:
     ) -> dict:
         """吊灯：Omni + 球体 mesh 作为灯泡形状。"""
         pos = light.get("position", [0, 0, 2400])
-        px, py, pz = float(pos[0]), float(pos[1]), float(pos[2])
+        px, py, pz = _xyz(pos)
         bulb_radius = float(light.get("bulb_radius", 60))  # mm
         var_omni = f"lt_pendant_{num}"
         var_bulb = f"lt_pendant_bulb_{num}"
@@ -302,7 +304,7 @@ class LightScriptBuilder:
         在注释中提供 VRayLight 版本。
         """
         pos = light.get("position", [0, 0, 2700])
-        px, py, pz = float(pos[0]), float(pos[1]), float(pos[2])
+        px, py, pz = _xyz(pos)
         a_width = float(light.get("width", 600))
         a_height = float(light.get("height", 300))
         var = f"lt_area_{num}"

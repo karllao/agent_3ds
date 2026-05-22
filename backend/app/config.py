@@ -49,6 +49,16 @@ class Settings(BaseSettings):
     openai_api_key: str = Field(default="", description="OpenAI API Key")
     anthropic_api_key: str = Field(default="", description="Anthropic API Key")
 
+    # ── AI 服务 Base URL（可选；留空则使用官方默认地址）─────────────────
+    openai_base_url: str = Field(
+        default="",
+        description="OpenAI / OpenAI 兼容接口的 Base URL，如 https://api.openai.com/v1 或自建代理地址",
+    )
+    anthropic_base_url: str = Field(
+        default="",
+        description="Anthropic / Anthropic 兼容接口的 Base URL，如 https://api.anthropic.com",
+    )
+
     # ── 3ds Max Worker ──────────────────────────────────────────────────
     max_worker_url: str = Field(
         default="http://localhost:8765",

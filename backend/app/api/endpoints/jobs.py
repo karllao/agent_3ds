@@ -225,8 +225,8 @@ async def cancel_job(job_id: int, db: DbSession) -> CancelJobResponse:
             )
             # 非致命：即使撤销失败，也更新 DB 状态
 
-    # 更新 Job 状态
-    job.status = JobStatus.REVOKED
+    # 更新 Job 状态（DB ENUM 无 REVOKED，用 FAILED + 错误消息表示"被取消"）
+    job.status = JobStatus.FAILED
     job.error_message = "任务被手动取消"
     await db.flush()
 

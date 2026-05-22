@@ -28,6 +28,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from ._normalize import xy as _xy
+
 
 class FloorScriptBuilder:
     """生成地板和天花板的 MAXScript 代码段。"""
@@ -154,8 +156,7 @@ class FloorScriptBuilder:
         lines.append(f"local splineIdx_{var_name} = addNewSpline {var_name}")
 
         for pt in boundary:
-            px = float(pt[0])
-            py = float(pt[1])
+            px, py = _xy(pt)
             lines.append(
                 f"addKnot {var_name} splineIdx_{var_name} #corner #line "
                 f"[{px:.2f}, {py:.2f}, 0]"

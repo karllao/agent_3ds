@@ -33,7 +33,13 @@ class Project(Base):
     # ── 基础信息 ──────────────────────────────────────────────────────────
     name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     status: Mapped[ProjectStatus] = mapped_column(
-        Enum(ProjectStatus, name="project_status"),
+        Enum(
+            ProjectStatus,
+            name="project_status",
+            # 用 .value（小写）入库，与 DB ENUM 定义一致；否则会写入 .name（大写）报错
+            values_callable=lambda enum_cls: [m.value for m in enum_cls],
+            create_type=False,
+        ),
         nullable=False,
         default=ProjectStatus.CREATED,
         index=True,

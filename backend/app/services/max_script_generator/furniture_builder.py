@@ -32,6 +32,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from ._normalize import xyz as _xyz
+
 # ---------------------------------------------------------------------------
 # 典型家具默认尺寸（length × width × height，单位 mm）
 # 3ds Max Box: length = Y轴, width = X轴, height = Z轴
@@ -112,10 +114,10 @@ class FurnitureScriptBuilder:
             furn_name: str = furn.get("name", f"{furn_type}_{furn_num}")
             safe_name = furn_name.replace(" ", "_").replace("/", "_").replace("-", "_")
             pos = furn.get("position", [0, 0, 0])
-            px, py, pz = float(pos[0]), float(pos[1]), float(pos[2])
+            px, py, pz = _xyz(pos)
             rot_z = float(furn.get("rotation_z", 0))
             scale = furn.get("scale", [1.0, 1.0, 1.0])
-            sx, sy, sz = float(scale[0]), float(scale[1]), float(scale[2])
+            sx, sy, sz = _xyz(scale, default_z=1.0)
 
             var = f"furn_{furn_num}"
             lines.append(
