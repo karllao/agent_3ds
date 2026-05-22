@@ -1,0 +1,18 @@
+# max_worker/requirements.txt
+# 运行在 Windows（安装了 3ds Max）的机器上
+
+# Web 框架
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+
+# 配置管理
+python-dotenv>=1.0.1
+
+# 日志
+loguru>=0.7.2
+
+# HTTP 客户端（供 backend 调用 worker 时使用，可选）
+httpx>=0.27.0
+
+# 数据验证（FastAPI 依赖）
+pydantic>=2.7.0
