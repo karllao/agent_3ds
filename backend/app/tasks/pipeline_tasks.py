@@ -393,6 +393,32 @@ async def _run_full_pipeline_async(
         actual_max_path = final_status.get("output_max_path") or output_max_path
         logger.success("[Pipeline] max_worker completed: output={}", actual_max_path)
 
+        # worker 把 .max 写在它自己的 Windows 磁盘上（如 F:\cad_agent_work\<task>\scene.max），
+        # backend 在 Linux 容器里看不到这个路径，必须主动拉回本地，否则后续
+        # /download 端点会 404。落地到 backend 本地 storage 后用 Linux 路径写库。
+        try:
+            local_artifact = await max_client.download_artifact(
+                task_id=max_task_id,
+                dest_path=output_max_path,
+            )
+            actual_max_path = str(local_artifact)
+            logger.info(
+                "[Pipeline] Artifact saved locally: {}", actual_max_path
+            )
+        except Exception as exc:
+            error_msg = f"拉取 .max 产物失败: {exc}"
+            logger.error("[Pipeline] {}", error_msg)
+            logger.debug(traceback.format_exc())
+            async with AsyncSessionLocal() as session:
+                await job_service.mark_job_failed(
+                    session, effective_job_id, error_msg
+                )
+                await project_service.update_project_status(
+                    session, project_id, ProjectStatus.FAILED.value
+                )
+                await session.commit()
+            raise RuntimeError(error_msg) from exc
+
     except Exception as exc:
         error_msg = f"3ds Max 执行失败: {exc}"
         logger.error("[Pipeline] {}", error_msg)
@@ -671,6 +697,27 @@ async def _continue_pipeline_async(
             raise RuntimeError(f"max_worker 执行失败: {detail}")
 
         actual_max_path = final_status.get("output_max_path") or output_max_path
+
+        # 同 run_full_pipeline：worker 写到 Windows 本地磁盘，必须拉回 backend 本地
+        try:
+            local_artifact = await max_client.download_artifact(
+                task_id=max_task_id,
+                dest_path=output_max_path,
+            )
+            actual_max_path = str(local_artifact)
+            logger.info(
+                "[Pipeline] Artifact saved locally: {}", actual_max_path
+            )
+        except Exception as exc:
+            error_msg = f"拉取 .max 产物失败: {exc}"
+            logger.error("[Pipeline] {}", error_msg)
+            async with AsyncSessionLocal() as session:
+                await job_service.mark_job_failed(session, job_id, error_msg)
+                await project_service.update_project_status(
+                    session, project_id, ProjectStatus.FAILED.value
+                )
+                await session.commit()
+            raise RuntimeError(error_msg) from exc
 
     except Exception as exc:
         error_msg = f"3ds Max 执行失败: {exc}"

@@ -52,33 +52,129 @@ export interface CADPreview {
   warnings: string[]
 }
 
-// ─── Scene JSON ───────────────────────────────────────────────────────────────
+// ─── Scene JSON (mirrors backend app/schemas/scene.py FullSceneData) ─────────
 
-export interface SceneObject {
-  id: string
-  type: 'wall' | 'floor' | 'ceiling' | 'furniture' | 'door' | 'window' | 'other'
-  name: string
-  position: [number, number, number]
-  rotation?: [number, number, number]
-  scale?: [number, number, number]
-  size: [number, number, number]
-  color?: string
-  material?: string
-  metadata?: Record<string, unknown>
+export interface Point2D { x: number; y: number }
+export interface Point3D { x: number; y: number; z: number }
+export interface Rotation3D { x: number; y: number; z: number }
+export interface Scale3D { x: number; y: number; z: number }
+export interface ColorRGB { r: number; g: number; b: number }
+
+export interface SceneConfig {
+  scene_name: string
+  unit_system: 'mm' | 'cm' | 'm'
+  floor_height: number
+  style: string
+  renderer: 'vray' | 'corona' | 'arnold' | 'default'
+  ambient_light_intensity: number
+  background_color: ColorRGB
 }
 
-export interface SceneRoom {
+export interface WallOpening {
+  opening_id: string
+  opening_type: 'door' | 'window' | 'opening'
+  position_along_wall: number
+  width: number
+  height: number
+  floor_offset: number
+}
+
+export interface WallConfig {
+  id: string
+  start: Point2D
+  end: Point2D
+  thickness: number
+  height: number
+  room_side_a: string | null
+  room_side_b: string | null
+  material: string
+  openings: WallOpening[]
+  is_exterior: boolean
+}
+
+export interface RoomConfig {
   id: string
   name: string
-  objects: SceneObject[]
-  floor_area?: number
+  type: string
+  boundary: Point2D[]
+  area: number
+  floor_material: string
+  ceiling_material: string
+  ceiling_type: string
+  ceiling_height: number | null
+  style: string | null
+}
+
+export interface DoorConfig {
+  id: string
+  wall_id: string
+  position: Point3D
+  width: number
+  height: number
+  floor_offset: number
+  swing_direction: string
+  door_type: string
+  material: string
+  frame_material: string
+  asset_id: string | null
+}
+
+export interface WindowConfig {
+  id: string
+  wall_id: string
+  position: Point3D
+  width: number
+  height: number
+  sill_height: number
+  window_type: string
+  glass_material: string
+  frame_material: string
+  has_curtain: boolean
+  curtain_material: string | null
+  asset_id: string | null
+}
+
+export type FurnitureCategory =
+  | 'sofa' | 'bed' | 'table' | 'chair' | 'desk'
+  | 'wardrobe' | 'cabinet' | 'bookshelf' | 'tv_stand'
+  | 'dining_table' | 'kitchen_cabinet' | 'appliance'
+  | 'decoration' | 'plant' | 'other'
+
+export interface FurnitureConfig {
+  id: string
+  category: FurnitureCategory
+  asset_id: string
+  room_id: string
+  position: Point3D
+  rotation: Rotation3D
+  scale: Scale3D
+  material_overrides: Record<string, string>
+}
+
+export interface MaterialConfig {
+  id: string
+  name: string
+  type: string
+  color: ColorRGB
+  texture_path: string | null
+  roughness: number
+  metallic: number
+  ior: number
+  opacity: number
 }
 
 export interface SceneJSON {
   version: string
-  rooms: SceneRoom[]
-  global_objects: SceneObject[]
-  metadata?: Record<string, unknown>
+  scene_config: SceneConfig
+  materials: MaterialConfig[]
+  walls: WallConfig[]
+  rooms: RoomConfig[]
+  doors: DoorConfig[]
+  windows: WindowConfig[]
+  furniture: FurnitureConfig[]
+  lights: unknown[]
+  cameras: unknown[]
+  extra: Record<string, unknown>
 }
 
 // ─── Chat ─────────────────────────────────────────────────────────────────────

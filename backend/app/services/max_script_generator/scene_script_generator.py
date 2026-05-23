@@ -340,14 +340,17 @@ class SceneScriptGenerator:
                 ")",
             ]
         else:
+            # 3ds Max 2018+ 把 scanline renderer 标为 Legacy，部分属性在 2025 已被
+            # 移除（如 `filter` 改名 / 删除）；任何一行 unknown property 会让整段
+            # 评估中断，所以每个赋值独立 try/catch，最差也只是跳过该属性。
             lines += [
-                "-- Scanline: Anti-aliasing",
+                "-- Scanline: Anti-aliasing (每行独立 try/catch，单个属性不可用不影响其它)",
                 "if (classOf renderers.current) == Default_Scanline_Renderer do (",
-                "    renderers.current.antiAliasing = true",
-                "    renderers.current.filter = Catmull_Rom()",
-                "    renderers.current.shadows = true",
-                "    renderers.current.autoReflect = true",
-                "    renderers.current.forceWireframe = false",
+                "    try ( renderers.current.antiAliasing = true ) catch ()",
+                "    try ( renderers.current.filter = Catmull_Rom() ) catch ()",
+                "    try ( renderers.current.shadows = true ) catch ()",
+                "    try ( renderers.current.autoReflect = true ) catch ()",
+                "    try ( renderers.current.forceWireframe = false ) catch ()",
                 '    print "Scanline settings applied"',
                 ")",
             ]

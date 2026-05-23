@@ -82,10 +82,16 @@ class CameraScriptBuilder:
             far_clip = float(cam.get("far_clip", 50000))
 
             var = f"cam_{cam_num}"
+            tgt_var = f"cam_{cam_num}_tgt"
             lines.append(f"-- ---- Camera {cam_num}: {cam_name} ----")
-            lines.append(f"local {var} = TargetCamera()")
+            # TargetCamera() 不带 target: 参数时不会自动创建 target 节点，
+            # 后续访问 .target.pos 会抛 "no member 'pos' in undefined" 让脚本中断。
+            # 显式建一个 targetObject 并通过 target: 关键字传入。
+            lines.append(
+                f"local {tgt_var} = targetObject pos:[{tx:.2f}, {ty:.2f}, {tz:.2f}]"
+            )
+            lines.append(f"local {var} = TargetCamera target:{tgt_var}")
             lines.append(f"{var}.pos = [{px:.2f}, {py:.2f}, {pz:.2f}]")
-            lines.append(f"{var}.target.pos = [{tx:.2f}, {ty:.2f}, {tz:.2f}]")
             lines.append(f"{var}.fov = {fov_val:.4f}")
 
             if clipping:
@@ -94,7 +100,7 @@ class CameraScriptBuilder:
                 lines.append(f"{var}.farClip = {far_clip:.2f}")
 
             lines.append(f'{var}.name = "Camera_{safe_name}"')
-            lines.append(f'{var}.target.name = "Camera_{safe_name}.Target"')
+            lines.append(f'{tgt_var}.name = "Camera_{safe_name}.Target"')
 
             # 多视口支持：切换对应相机视口（batch 模式下无 viewport，
             # 用 try/catch 包裹避免脚本中断）

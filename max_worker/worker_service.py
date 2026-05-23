@@ -30,6 +30,7 @@ from typing import Any
 import config as cfg
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Security, status
+from fastapi.responses import FileResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from loguru import logger
 from pydantic import BaseModel, Field
@@ -414,6 +415,51 @@ async def list_tasks(
         }
         for t in tasks[:limit]
     ]
+
+
+@app.get(
+    "/file/{task_id}",
+    tags=["Tasks"],
+    summary="下载任务产生的 .max 文件",
+)
+async def download_task_artifact(
+    task_id: str,
+    _: None = Depends(verify_token),
+) -> FileResponse:
+    """
+    流式返回某个已完成任务产生的 .max 文件。
+
+    backend 与 worker 通常不共享文件系统（前者 Linux 容器、后者 Windows），
+    所以 .max 文件需要通过 HTTP 拉回 backend 再持久化。
+    """
+    if task_id not in _task_store:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Task not found: {task_id}",
+        )
+
+    task = _task_store[task_id]
+    if task["status"] != TaskStatus.COMPLETED:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Task is not completed (status={task['status']}); "
+                "artifact unavailable"
+            ),
+        )
+
+    out_path = Path(task["output_max_path"])
+    if not out_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Artifact missing on disk: {out_path}",
+        )
+
+    return FileResponse(
+        path=str(out_path),
+        filename=out_path.name,
+        media_type="application/octet-stream",
+    )
 
 
 # ---------------------------------------------------------------------------

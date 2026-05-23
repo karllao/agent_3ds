@@ -14,13 +14,17 @@ from __future__ import annotations
 
 import asyncio
 import time
+from pathlib import Path
 from typing import Optional
 
 import httpx
 from loguru import logger
 
 # max_worker 任务最终状态
-_TERMINAL_STATUSES = {"completed", "failed", "error", "cancelled"}
+# 注意：必须与 max_worker/worker_service.py::TaskStatus 枚举的终态保持一致。
+# max_worker 用 "timeout" 表示 3dsmaxbatch 超过执行时限后被强制终止，
+# 也是终态——漏掉它会让 backend 一直 polling，前端误显示"运行中"。
+_TERMINAL_STATUSES = {"completed", "failed", "error", "cancelled", "timeout"}
 
 
 class MaxWorkerError(Exception):
@@ -263,6 +267,84 @@ class MaxWorkerClient:
                 raise TimeoutError(msg)
 
             await asyncio.sleep(min(poll_interval, remaining))
+
+    async def download_artifact(
+        self,
+        task_id: str,
+        dest_path: str | Path,
+        chunk_size: int = 1024 * 1024,
+    ) -> Path:
+        """
+        从 worker 拉取某个已完成任务的 .max 产物并落地到 backend 本地。
+
+        backend 与 worker 不共享文件系统，所以必须通过 HTTP 拉回；
+        拿到后存到 ``dest_path``，DB 里再保存这个 Linux 路径供 /download 用。
+
+        Args:
+            task_id:    worker 返回的任务 ID。
+            dest_path:  backend 本地保存路径（含文件名）；父目录会自动创建。
+            chunk_size: 流式写入的块大小（字节），默认 1 MiB。
+
+        Returns:
+            实际写入的本地路径（Path 对象）。
+
+        Raises:
+            MaxWorkerError: 拉取或写入失败。
+        """
+        dest = Path(dest_path)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        # 写到临时文件再 rename，避免下载中断留下半截文件被当成产物
+        tmp = dest.with_suffix(dest.suffix + ".part")
+
+        logger.info(
+            "[MaxWorkerClient] Fetching artifact: task_id={} → {}",
+            task_id,
+            dest,
+        )
+        try:
+            async with self._get_client() as client:
+                async with client.stream("GET", f"/file/{task_id}") as response:
+                    response.raise_for_status()
+                    total = 0
+                    with open(tmp, "wb") as f:
+                        async for chunk in response.aiter_bytes(chunk_size):
+                            if chunk:
+                                f.write(chunk)
+                                total += len(chunk)
+                    logger.success(
+                        "[MaxWorkerClient] Artifact fetched: {} bytes → {}",
+                        total,
+                        dest,
+                    )
+        except httpx.HTTPStatusError as exc:
+            # 读完响应体以拿到 detail（stream 模式下需要显式 aread）
+            body = ""
+            try:
+                body = (await exc.response.aread()).decode(
+                    "utf-8", errors="replace"
+                )
+            except Exception:
+                pass
+            msg = (
+                f"max_worker /file/{task_id} 返回错误 "
+                f"{exc.response.status_code}: {body[:500]}"
+            )
+            logger.error("[MaxWorkerClient] {}", msg)
+            tmp.unlink(missing_ok=True)
+            raise MaxWorkerError(msg) from exc
+        except httpx.RequestError as exc:
+            msg = f"max_worker 下载产物失败: {exc}"
+            logger.error("[MaxWorkerClient] {}", msg)
+            tmp.unlink(missing_ok=True)
+            raise MaxWorkerError(msg) from exc
+        except OSError as exc:
+            msg = f"写入本地文件失败: {dest} ({exc})"
+            logger.error("[MaxWorkerClient] {}", msg)
+            tmp.unlink(missing_ok=True)
+            raise MaxWorkerError(msg) from exc
+
+        tmp.replace(dest)
+        return dest
 
     async def health_check(self) -> bool:
         """
