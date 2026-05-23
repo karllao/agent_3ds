@@ -517,32 +517,30 @@ def _build_command(task: dict[str, Any]) -> list[str]:
     """
     构造 3dsmaxbatch.exe 命令行参数。
 
-    3dsmaxbatch.exe 用法要点：
-      - 直接执行 MAXScript 文件用 `-mxsString "fileIn @path"`
-        （`-sceneFile` 是给 .max 场景文件用的，不能用来执行 .ms 脚本，
-         否则 3dsmaxbatch 会立即以 rc=-100 退出）
-      - `-mip`        以批处理模式启动，不弹任何 UI
-      - `-v <level>`  日志详细级别 (0-5)
-      - `-outputName` 仅在用 `-sceneFile` 加载场景时有意义；本场景中脚本
-                      自己调用 saveMaxFile，不需要这个参数
-    """
-    script_path = task["script_path"]
-    # MAXScript 字符串字面量 @"..." 里反斜杠不需要转义，唯一要转的是 "
-    # 我们用 @"..." 包裹路径
-    mxs_path = script_path.replace('"', '\\"')
-    mxs_string = f'fileIn @"{mxs_path}"'
+    3dsmaxbatch.exe 用法（Autodesk 官方）：
+        3dsmaxbatch.exe [options] <script_file>
 
+    要点：
+      - <script_file> 是 **位置参数**，必填，放在命令行最后。3dsmaxbatch
+        会根据扩展名自动识别是 MAXScript (.ms/.mse/.mcr) 还是 Python (.py)
+      - `-sceneFile <file>` 是用来加载 .max **场景文件** 的，不能拿来执行
+        .ms 脚本，否则 rc=-100
+      - `-mxsString name value` 是给脚本注入字符串变量用的（需要 name+value
+        两个参数），不是执行脚本的入口；只传一个值会让 3dsmaxbatch 解析
+        失败并打印 usage 后以 rc=-100 退出
+      - `-v <level>`  日志详细级别 (0-5)
+    """
     cmd: list[str] = [
         cfg.MAX_EXE_PATH,
-        "-mip",
         "-v",
         "5",
-        "-mxsString",
-        mxs_string,
     ]
 
-    # 追加用户自定义参数
+    # 追加用户自定义参数（必须在脚本路径之前，因为脚本是位置参数）
     cmd += task.get("extra_args", [])
+
+    # 脚本文件作为位置参数放在最后
+    cmd.append(task["script_path"])
 
     return cmd
 

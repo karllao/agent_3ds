@@ -378,9 +378,17 @@ async def _run_full_pipeline_async(
         )
 
         if final_status.get("status") != "completed":
-            raise RuntimeError(
-                f"max_worker 执行失败: {final_status.get('error', '未知错误')}"
+            err_text = (
+                final_status.get("error_message")
+                or final_status.get("error")
+                or "未知错误"
             )
+            stderr_tail = (final_status.get("stderr") or "")[-800:]
+            rc = final_status.get("return_code")
+            detail = f"{err_text} (rc={rc})" if rc is not None else err_text
+            if stderr_tail:
+                detail = f"{detail} | stderr: {stderr_tail}"
+            raise RuntimeError(f"max_worker 执行失败: {detail}")
 
         actual_max_path = final_status.get("output_max_path") or output_max_path
         logger.success("[Pipeline] max_worker completed: output={}", actual_max_path)
@@ -650,9 +658,17 @@ async def _continue_pipeline_async(
         )
 
         if final_status.get("status") != "completed":
-            raise RuntimeError(
-                f"max_worker 执行失败: {final_status.get('error', '未知错误')}"
+            err_text = (
+                final_status.get("error_message")
+                or final_status.get("error")
+                or "未知错误"
             )
+            stderr_tail = (final_status.get("stderr") or "")[-800:]
+            rc = final_status.get("return_code")
+            detail = f"{err_text} (rc={rc})" if rc is not None else err_text
+            if stderr_tail:
+                detail = f"{detail} | stderr: {stderr_tail}"
+            raise RuntimeError(f"max_worker 执行失败: {detail}")
 
         actual_max_path = final_status.get("output_max_path") or output_max_path
 

@@ -6,6 +6,7 @@ python-multipart==0.0.9
 # Task Queue
 celery[redis]==5.4.0
 redis==5.0.4
+flower==2.0.1
 
 # Database
 sqlalchemy==2.0.30

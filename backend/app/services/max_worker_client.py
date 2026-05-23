@@ -231,12 +231,26 @@ class MaxWorkerClient:
                         status_data.get("output_max_path"),
                     )
                 else:
+                    # max_worker /status 返回的字段是 error_message；保留旧 "error"
+                    # 作为回退，避免 worker 版本不一致时丢失错误信息
+                    err = (
+                        status_data.get("error_message")
+                        or status_data.get("error")
+                        or ""
+                    )
+                    stderr_tail = (status_data.get("stderr") or "")[-1000:]
+                    stdout_tail = (status_data.get("stdout") or "")[-500:]
                     logger.error(
-                        "[MaxWorkerClient] Task {} ended with status={}: error={}",
+                        "[MaxWorkerClient] Task {} ended with status={}: "
+                        "error={!r} | stderr_tail={!r} | stdout_tail={!r}",
                         task_id,
                         current_status,
-                        status_data.get("error"),
+                        err,
+                        stderr_tail,
+                        stdout_tail,
                     )
+                    # 暴露给上层的 dict 也补一份 "error" 别名
+                    status_data.setdefault("error", err)
                 return status_data
 
             remaining = deadline - time.monotonic()
