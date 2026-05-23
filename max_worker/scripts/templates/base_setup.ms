@@ -16,7 +16,7 @@ resetMaxFile #noPrompt
 
 units.SystemType    = #Millimeters
 units.SystemScale   = 1.0
-units.DisplayType   = #Millimeters
+units.DisplayType   = #Metric
 units.MetricType    = #Millimeters
 
 print "Units set to Millimeters"
