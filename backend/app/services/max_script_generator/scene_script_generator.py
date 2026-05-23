@@ -199,7 +199,14 @@ class SceneScriptGenerator:
         # ---- [10] 保存文件 ----
         sections.append(self._section_save(max_path_escaped))
 
-        return "\n\n".join(sections)
+        # 所有可执行段必须包裹在一个 ( ... ) 块内：
+        # MAXScript 顶层不允许 `local` 声明（会报 "Call needs ... got: local x ="），
+        # 而 block 内是合法的。各 builder 大量用 `local` 命名几何/材质变量；
+        # 一律放进同一个大 block 既保留 local 语义，又允许跨 section 引用。
+        # header（纯注释）留在 block 之外作为文件顶部说明。
+        header_text = sections[0]
+        body_text = "\n\n".join(sections[1:])
+        return header_text + "\n\n(\n\n" + body_text + "\n\n)\n"
 
     # ------------------------------------------------------------------
     # 各 Section 生成

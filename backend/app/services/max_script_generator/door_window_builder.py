@@ -177,7 +177,7 @@ class DoorWindowScriptBuilder:
             "door_handle_mat.diffuse = (color 200 180 120)",
             "door_handle_mat.specularLevel = 80",
             "door_handle_mat.glossiness = 70",
-            "door_handle_mat.specular = (color 255 240 180)",
+            "try ( door_handle_mat.specularColor = (color 255 240 180) ) catch ()",
             "",
             "-- 窗框材质（白色）",
             "local win_frame_mat = StandardMaterial()",
@@ -194,7 +194,7 @@ class DoorWindowScriptBuilder:
             "win_glass_mat.specularLevel = 90",
             "win_glass_mat.glossiness = 85",
             "win_glass_mat.twoSided = true",
-            "win_glass_mat.filter = (color 180 210 240)",
+            "try ( win_glass_mat.filterColor = (color 180 210 240) ) catch ()",
         ]
 
     # ──────────────────────────────────────────────────────────────
