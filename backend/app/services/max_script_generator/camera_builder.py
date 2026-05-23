@@ -96,20 +96,25 @@ class CameraScriptBuilder:
             lines.append(f'{var}.name = "Camera_{safe_name}"')
             lines.append(f'{var}.target.name = "Camera_{safe_name}.Target"')
 
-            # 多视口支持：切换对应相机视口
+            # 多视口支持：切换对应相机视口（batch 模式下无 viewport，
+            # 用 try/catch 包裹避免脚本中断）
             viewport_idx = min(idx, 4)  # 最多 4 个视口
-            lines.append(f"-- Set viewport {viewport_idx} to this camera")
-            lines.append(f"viewport.setCamera {var} vp:{viewport_idx}")
+            lines.append(f"-- Set viewport {viewport_idx} to this camera (UI only)")
+            lines.append(
+                f"try (viewport.setCamera {var} vp:{viewport_idx}) catch ()"
+            )
 
             lines.append("")
             cam_vars.append(var)
 
         # ---- 激活第一个相机的视口 ----
         if cam_vars:
-            lines.append("-- ---- Activate first camera viewport ----")
-            lines.append("viewport.setLayout #layout_4")
-            lines.append("viewport.setActiveViewport 1")
-            lines.append(f"viewport.setCamera {cam_vars[0]} vp:1")
+            lines.append("-- ---- Activate first camera viewport (UI only) ----")
+            lines.append("try (")
+            lines.append("    viewport.setLayout #layout_4")
+            lines.append("    viewport.setActiveViewport 1")
+            lines.append(f"    viewport.setCamera {cam_vars[0]} vp:1")
+            lines.append(") catch ()")
             lines.append("")
 
         # ---- Group: Cameras ----

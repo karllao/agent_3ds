@@ -152,39 +152,101 @@ class MaterialScriptBuilder:
         rooms: list[dict[str, Any]],
     ) -> str:
         """
-        返回 MAXScript 字符串：
-          - 创建所有所需材质（StandardMaterial）
-          - 将材质放入 meditMaterials 槽
-          - 提供根据对象名称应用材质的辅助函数
-          - 在注释中给出对应的 V-Ray 版本参数
+        返回 MAXScript 字符串：声明 + 立即应用（旧入口，保留向后兼容）。
+
+        新代码推荐分两段输出：
+          - `build_declarations(...)` 在所有几何体之前执行（创建 mat_* 变量、定义辅助函数）
+          - `build_applications(...)` 在所有几何体之后执行（按名前缀应用材质 + UVW）
+
+        旧入口保留是因为：单元测试 / 调用方可能依赖原行为；本次重构不破坏接口。
         """
-        lines: list[str] = []
-        lines.append("-- ============================================================")
-        lines.append("-- [Section] Material Builder - Auto Generated")
-        lines.append("-- ============================================================")
-        lines.append("")
+        used_types = self._collect_used_types(materials, rooms)
+        if not used_types:
+            return "\n".join(self._header_lines("-- No materials requested"))
 
-        # 收集本场景用到的材质类型（去重）
-        used_types: dict[str, str] = {}  # type_key -> var_name
+        lines = self._header_lines()
+        lines += self._build_declarations_block(used_types)
+        lines += self._build_helper_function()
+        lines += self._build_application_block(used_types)
+        return "\n".join(lines)
 
-        # 从 materials 列表收集
+    # ── 新接口：声明与应用分离 ─────────────────────────────────────────────
+
+    def build_declarations(
+        self,
+        materials: list[dict[str, Any]],
+        rooms: list[dict[str, Any]],
+    ) -> str:
+        """
+        仅输出材质声明 + 通用 applyMaterialByNamePrefix 辅助函数。
+        在所有几何 builder 之前调用。
+        """
+        used_types = self._collect_used_types(materials, rooms)
+        lines = self._header_lines(
+            "" if used_types else "-- No materials requested"
+        )
+        if not used_types:
+            return "\n".join(lines)
+        lines += self._build_declarations_block(used_types)
+        lines += self._build_helper_function()
+        return "\n".join(lines)
+
+    def build_applications(
+        self,
+        materials: list[dict[str, Any]],
+        rooms: list[dict[str, Any]],
+    ) -> str:
+        """
+        仅输出材质应用调用（applyMaterialByNamePrefix）。
+        必须在所有几何 builder 之后调用，否则场景里没有可匹配的对象。
+        """
+        used_types = self._collect_used_types(materials, rooms)
+        if not used_types:
+            return "-- [Section] Material Applications - No materials to apply"
+        lines: list[str] = [
+            "-- ============================================================",
+            "-- [Section] Material Applications - Auto Generated",
+            "-- (runs AFTER all geometry exists so name-prefix matches work)",
+            "-- ============================================================",
+            "",
+        ]
+        lines += self._build_application_block(used_types)
+        return "\n".join(lines)
+
+    # ── 内部 ───────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _header_lines(footer: str = "") -> list[str]:
+        out = [
+            "-- ============================================================",
+            "-- [Section] Material Builder - Auto Generated",
+            "-- ============================================================",
+            "",
+        ]
+        if footer:
+            out.append(footer)
+        return out
+
+    @staticmethod
+    def _collect_used_types(
+        materials: list[dict[str, Any]],
+        rooms: list[dict[str, Any]],
+    ) -> dict[str, str]:
+        used_types: dict[str, str] = {}
         for mat in materials:
             mat_type = mat.get("type", "white_paint")
             if mat_type not in used_types:
                 used_types[mat_type] = f"mat_{mat_type}"
-
-        # 从 rooms 推断额外材质
         for room in rooms:
             for field in ("floor_material", "ceiling_material", "wall_material"):
                 mat_type = room.get(field, "")
                 if mat_type and mat_type not in used_types:
                     used_types[mat_type] = f"mat_{mat_type}"
+        return used_types
 
-        if not used_types:
-            lines.append("-- No materials requested")
-            return "\n".join(lines)
-
-        lines.append("-- ---- Material declarations ----")
+    @staticmethod
+    def _build_declarations_block(used_types: dict[str, str]) -> list[str]:
+        lines: list[str] = ["-- ---- Material declarations ----"]
         slot_idx = 1
         for mat_type, var_name in used_types.items():
             recipe = _MATERIAL_RECIPES.get(mat_type)
@@ -200,29 +262,26 @@ class MaterialScriptBuilder:
             label = recipe["label"]
             vray_comment = recipe["vray_comment"]
 
-            lines.append(f"")
+            lines.append("")
             lines.append(f"-- Material: {label} ({mat_type})")
             lines.append(vray_comment)
-            lines.append(f"local {var_name} = StandardMaterial()")
+            lines.append(f"global {var_name} = StandardMaterial()")
             lines.append(f'{var_name}.name = "{label}"')
             lines.append(f"{var_name}.diffuse = (color {r} {g} {b})")
             lines.append(f"{var_name}.specularLevel = {spec}")
             lines.append(f"{var_name}.glossiness = {gloss}")
             lines.append(f"{var_name}.opacity = {opacity}")
 
-            # 伪反射：用 Self-Illumination 近似（扫描线不支持真实反射）
             if refl > 0:
                 lines.append(
-                    f"-- Reflection approximated via specular (scanline limitation)"
+                    "-- Reflection approximated via specular (scanline limitation)"
                 )
                 lines.append(f"{var_name}.specularLevel = {min(100, spec + refl)}")
 
-            # 放入 meditMaterials 槽
             if slot_idx <= 24:
                 lines.append(f"meditMaterials[{slot_idx}] = {var_name}")
                 slot_idx += 1
 
-            # UVW Mapping 修改器（将在几何体创建后由应用函数添加）
             if recipe.get("uvw"):
                 tile_l = recipe.get("uvw_length", 1000)
                 tile_w = recipe.get("uvw_width", 1000)
@@ -232,29 +291,31 @@ class MaterialScriptBuilder:
                 )
 
         lines.append("")
+        return lines
 
-        # ---- 辅助函数：按对象名前缀应用材质 + UVW ----
-        lines.append("-- ---- Material application helper function ----")
-        lines.append(
-            "fn applyMaterialByNamePrefix obj_name_prefix mat_ref uvw_l uvw_w = ("
-        )
-        lines.append("    for obj in objects do (")
-        lines.append(
-            '        if matchPattern obj.name pattern:(obj_name_prefix + "*") do ('
-        )
-        lines.append("            obj.material = mat_ref")
-        lines.append("            if uvw_l > 0 do (")
-        lines.append(
-            "                addModifier obj (UVWMap maptype:0 length:uvw_l width:uvw_w height:uvw_w)"
-        )
-        lines.append("            )")
-        lines.append("        )")
-        lines.append("    )")
-        lines.append(")")
-        lines.append("")
+    @staticmethod
+    def _build_helper_function() -> list[str]:
+        return [
+            "-- ---- Material application helper function ----",
+            "-- Declared as global so it survives until the application section runs.",
+            "global applyMaterialByNamePrefix",
+            "fn applyMaterialByNamePrefix obj_name_prefix mat_ref uvw_l uvw_w = (",
+            "    for obj in objects do (",
+            '        if matchPattern obj.name pattern:(obj_name_prefix + "*") do (',
+            "            obj.material = mat_ref",
+            "            if uvw_l > 0 do (",
+            "                addModifier obj (UVWMap maptype:0 "
+            "length:uvw_l width:uvw_w height:uvw_w)",
+            "            )",
+            "        )",
+            "    )",
+            ")",
+            "",
+        ]
 
-        # ---- 自动应用材质 ----
-        lines.append("-- ---- Apply materials to scene objects ----")
+    @staticmethod
+    def _build_application_block(used_types: dict[str, str]) -> list[str]:
+        lines: list[str] = ["-- ---- Apply materials to scene objects ----"]
         for mat_type, var_name in used_types.items():
             recipe = _MATERIAL_RECIPES.get(mat_type)
             if recipe is None:
@@ -263,25 +324,22 @@ class MaterialScriptBuilder:
             tile_w = recipe.get("uvw_width", 0) if recipe.get("uvw") else 0
             label = recipe["label"]
 
-            # Wall 材质应用
-            lines.append(
-                f'applyMaterialByNamePrefix "Wall_" {var_name} 0 0'
-                if mat_type == "white_paint"
-                else f"-- apply {label}: call applyMaterialByNamePrefix with correct prefix"
-            )
-
-            # Floor/Ceiling 材质应用（按注释生成，真实场景中需要精确匹配对象名）
-            if mat_type == "wood_floor":
+            if mat_type == "white_paint":
+                # 默认墙面与天花用白色乳胶漆
                 lines.append(
-                    f'applyMaterialByNamePrefix "Floor_" {var_name} {tile_l:.0f} {tile_w:.0f}'
+                    f'applyMaterialByNamePrefix "Wall_" {var_name} 0 0'
                 )
-            elif mat_type == "light_gray_tile":
                 lines.append(
-                    f'applyMaterialByNamePrefix "Floor_" {var_name} {tile_l:.0f} {tile_w:.0f}'
+                    f'applyMaterialByNamePrefix "Ceiling_" {var_name} 0 0'
                 )
-            elif mat_type == "white_paint" and "white_paint" in used_types:
-                lines.append(f'applyMaterialByNamePrefix "Ceiling_" {var_name} 0 0')
-
+            elif mat_type in ("wood_floor", "light_gray_tile", "marble"):
+                lines.append(
+                    f'applyMaterialByNamePrefix "Floor_" {var_name} '
+                    f'{tile_l:.0f} {tile_w:.0f}'
+                )
+            else:
+                lines.append(
+                    f"-- {label}: no auto-prefix rule; apply manually if needed"
+                )
         lines.append("")
-
-        return "\n".join(lines)
+        return lines

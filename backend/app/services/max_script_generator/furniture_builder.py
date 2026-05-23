@@ -214,7 +214,12 @@ class FurnitureScriptBuilder:
         sy: float,
         sz: float,
     ) -> list[str]:
-        """生成 mergeMaxFile 导入真实资产的代码。"""
+        """生成 mergeMaxFile 导入真实资产的代码。
+
+        关键：所有产生 ``var`` 的赋值必须发生在 ``if``/``else`` 块之外的
+        外层作用域，否则后续 grouping 代码引用 ``var`` 时会拿到 undefined
+        （MAXScript 的 ``local`` 是块作用域）。
+        """
         # 资产文件路径推断（约定：lib_path/furn_type/asset_id.max）
         if lib_path:
             asset_path = f"{lib_path}/{furn_type}/{asset_id}.max"
@@ -227,6 +232,8 @@ class FurnitureScriptBuilder:
 
         return [
             f"-- Import real asset: {asset_id}",
+            # 外层声明，让后续 group 引用得到
+            f"local {var} = undefined",
             f'local asset_file_{var} = "{asset_path}"',
             f"if doesFileExist asset_file_{var} then (",
             f"    -- Record nodes before merge",
@@ -243,8 +250,7 @@ class FurnitureScriptBuilder:
             f"        )",
             f"    )",
             f"",
-            f"    -- Get root node (top-level parent)",
-            f"    local {var} = undefined",
+            f"    -- Get root node (top-level parent), assign to OUTER var",
             f"    for n in merged_nodes_{var} do (",
             f"        if n.parent == undefined do {var} = n",
             f"    )",
@@ -260,7 +266,7 @@ class FurnitureScriptBuilder:
             f"    )",
             f") else (",
             f'    print ("WARNING: Asset file not found: " + asset_file_{var})',
-            f"    -- Fallback to placeholder",
+            f"    -- Fallback to placeholder (assigns to OUTER var)",
             self._placeholder_fallback(
                 var, furn_type, safe_name, px, py, center_z, rot_z
             ),
@@ -277,10 +283,15 @@ class FurnitureScriptBuilder:
         center_z: float,
         rot_z: float,
     ) -> str:
-        """资产文件不存在时的回退占位盒（单行）。"""
+        """资产文件不存在时的回退占位盒（单行）。
+
+        注意：这里赋值给的是外层声明的 ``var``（_build_real_asset 中已经
+        用 ``local {var} = undefined`` 在外层作用域声明过），所以这里
+        不能再 ``local``，否则会创建一个新的块作用域变量。
+        """
         size = _FURNITURE_SIZES.get(furn_type, {"l": 800, "w": 800, "h": 800})
         return (
-            f"    local {var} = Box length:{size['l']:.0f} "
+            f"    {var} = Box length:{size['l']:.0f} "
             f"width:{size['w']:.0f} height:{size['h']:.0f}; "
             f"{var}.pos = [{px:.2f}, {py:.2f}, {center_z:.2f}]; "
             f"{var}.rotation = (EulerAngles 0 0 {rot_z:.4f}); "

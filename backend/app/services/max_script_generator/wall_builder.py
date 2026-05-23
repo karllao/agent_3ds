@@ -222,20 +222,36 @@ class WallScriptBuilder:
     @staticmethod
     def _proboolean_subtract(base_var: str, cutter_var: str) -> str:
         """
-        返回 ProBoolean 减法操作的 MAXScript 代码（原地修改 base_var）。
-        使用 ProBoolean compound object；如果场景中 ProBoolean 不可用，
-        则回退到 BooleanOps.
+        返回布尔减法操作的 MAXScript 代码（原地修改 base_var）。
 
-        注意：ProBoolean 的 attchObjects 会消耗 cutter，base_var
-        指向的引用在操作后自动成为布尔结果。
+        ProBoolean 是 3ds Max 中的 *compound object*，不是 modifier，所以
+        不能用 `addModifier`。正确的 API 是先用 ProBoolean.CreateBooleanObject
+        把 base 转成 ProBoolean 节点，再用 SetOperandB 添加 cutter 并指定
+        操作类型（2 = Subtraction）。
+
+        SetOperandB 签名（3ds Max 帮助文档）:
+          ProBoolean.SetOperandB <base> <operand>
+              <copyMode:int>      0=Reference 1=Copy 2=Move 3=Instance
+              <material:int>      0=Operand Mat  1=Original Mat  2=No Mat
+              <subMtl:int>        0=Apply Mat IDs  1=Keep Mat IDs
+              <displayMode:int>   0=Result  1=OperandsAndResult …
+              <boolOp:int>        0=Union 1=Intersect 2=Subtract 3=Merge …
+
+        如果 ProBoolean 不可用（极少见），用 try/catch 回退到经典 Boolean
+        （`boolObj.createBooleanObject`），同样以减法收尾。
         """
         lines = [
-            f"select {base_var}",
-            f"addModifier {base_var} (ProBoolean())",
-            f"local pb_{base_var} = {base_var}.modifiers[#ProBoolean]",
-            f"pb_{base_var}.operation = 2",  # 2 = Subtraction
-            f"pb_{base_var}.attachList = #{{{cutter_var}}}",
-            f"-- Apply ProBoolean",
-            f"maxOps.CollapseNodeTo {base_var} 1 true",
+            f"-- Boolean subtract: {base_var} -= {cutter_var}",
+            f"try (",
+            f"    ProBoolean.CreateBooleanObject {base_var}",
+            f"    ProBoolean.SetOperandB {base_var} {cutter_var} 2 0 0 0 2",
+            f") catch (",
+            f'    format "ProBoolean failed (%), fallback to boolObj\\n" '
+            f"(getCurrentException())",
+            f"    if isValidNode {cutter_var} do (",
+            f"        boolObj.createBooleanObject {base_var} {cutter_var}",
+            f"        boolObj.setBoolOp {base_var} 3  -- 3 = Subtraction A-B",
+            f"    )",
+            f")",
         ]
         return "\n".join(lines)

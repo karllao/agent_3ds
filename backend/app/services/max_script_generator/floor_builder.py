@@ -84,9 +84,12 @@ class FloorScriptBuilder:
                 f"addModifier {floor_spline_var} "
                 f"(Extrude amount:{self.FLOOR_THICKNESS:.1f} capping:true)"
             )
+            # maxOps.CollapseNodeTo 原地折叠节点，返回 OK 而非节点本身，
+            # 所以这里通过别名 floor_var 引用同一个节点。
             lines.append(
-                f"local {floor_var} = maxOps.CollapseNodeTo {floor_spline_var} 1 false"
+                f"maxOps.CollapseNodeTo {floor_spline_var} 1 false"
             )
+            lines.append(f"local {floor_var} = {floor_spline_var}")
             lines.append(f'{floor_var}.name = "Floor_{safe_name}"')
             lines.append(f"-- floor material key: {floor_mat}")
             lines.append("")
@@ -107,8 +110,9 @@ class FloorScriptBuilder:
                 f"(Extrude amount:{self.CEILING_THICKNESS:.1f} capping:true)"
             )
             lines.append(
-                f"local {ceil_var} = maxOps.CollapseNodeTo {ceil_spline_var} 1 false"
+                f"maxOps.CollapseNodeTo {ceil_spline_var} 1 false"
             )
+            lines.append(f"local {ceil_var} = {ceil_spline_var}")
             lines.append(f'{ceil_var}.name = "Ceiling_{safe_name}"')
             lines.append(f"-- ceiling material key: {ceiling_mat}")
             lines.append("")

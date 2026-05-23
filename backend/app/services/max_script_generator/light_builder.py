@@ -300,8 +300,12 @@ class LightScriptBuilder:
         intensity: float,
     ) -> dict:
         """
-        面光源：优先使用 mr Area Light；
-        在注释中提供 VRayLight 版本。
+        面光源。
+
+        优先尝试 photometric Free Area Light（3ds Max 2017+ 内置，
+        即 light_object 中的 mr_Area_Light 替代品 freeAreaLight）；
+        失败再回退到 mr_Area_Light（旧版本）；最后回退到 Omnilight，
+        保证脚本不会因为某个光源类型缺失而中断整段建模。
         """
         pos = light.get("position", [0, 0, 2700])
         px, py, pz = _xyz(pos)
@@ -310,24 +314,34 @@ class LightScriptBuilder:
         var = f"lt_area_{num}"
 
         code = [
-            f"-- Area light (mr Area Light). VRay alternative in comments below.",
-            f"-- VRay: local {var} = VRayLight()",
-            f"-- VRay: {var}.type = 0  -- plane",
-            f"-- VRay: {var}.size1 = {a_width:.1f}",
-            f"-- VRay: {var}.size2 = {a_height:.1f}",
-            f"-- VRay: {var}.multiplier = {intensity:.3f}",
-            f"-- VRay: {var}.color = (color {rgb[0]} {rgb[1]} {rgb[2]})",
-            f"-- VRay: {var}.pos = [{px:.2f}, {py:.2f}, {pz:.2f}]",
-            f"",
-            f"local {var} = mr_Area_Light()",
-            f"{var}.pos = [{px:.2f}, {py:.2f}, {pz:.2f}]",
-            f"{var}.rotation = (EulerAngles 0 -90 0)",  # 向下
-            f"{var}.multiplier = {intensity:.3f}",
-            f"{var}.rgb = (color {rgb[0]} {rgb[1]} {rgb[2]})",
-            f"{var}.width = {a_width:.1f}",
-            f"{var}.height = {a_height:.1f}",
-            f"{var}.castShadows = true",
-            f'{var}.name = "AreaLight_{safe_name}"',
+            f"-- Area light (auto-fallback chain)",
+            f"-- VRay alternative: VRayLight type=0(plane) size1={a_width:.1f} "
+            f"size2={a_height:.1f} multiplier={intensity:.3f}",
+            f"local {var} = undefined",
+            f"try (",
+            f"    {var} = freeAreaLight()",
+            f"    {var}.area_type = 1  -- 1 = Rectangle",
+            f"    {var}.length = {a_height:.1f}",
+            f"    {var}.width = {a_width:.1f}",
+            f") catch (",
+            f"    try (",
+            f"        {var} = mr_Area_Light()",
+            f"        {var}.width = {a_width:.1f}",
+            f"        {var}.height = {a_height:.1f}",
+            f"    ) catch (",
+            f'        format "Area light fallback to Omni: %\\n" '
+            f"(getCurrentException())",
+            f"        {var} = Omnilight()",
+            f"    )",
+            f")",
+            f"if {var} != undefined do (",
+            f"    {var}.pos = [{px:.2f}, {py:.2f}, {pz:.2f}]",
+            f"    try ({var}.rotation = (EulerAngles 0 -90 0)) catch ()",
+            f"    {var}.multiplier = {intensity:.3f}",
+            f"    {var}.rgb = (color {rgb[0]} {rgb[1]} {rgb[2]})",
+            f"    {var}.castShadows = true",
+            f'    {var}.name = "AreaLight_{safe_name}"',
+            f")",
         ]
         return {"code": code, "vars": [var]}
 
@@ -340,8 +354,12 @@ class LightScriptBuilder:
         intensity: float,
     ) -> dict:
         """
-        日光：Directional Light 模拟（简单可靠）。
-        也提供 Sunlight System 创建注释。
+        日光：Target Directional Light 模拟（简单可靠）。
+
+        `Directionallight()` 创建的自由平行光没有 target 节点，
+        访问 `.target.pos` 会抛 "no member target" 错误。改用
+        `TargetDirectionallight target:(targetObject pos:[0,0,0])`
+        显式创建带目标的版本。
         """
         azimuth = float(light.get("azimuth", 135))  # 方位角，度
         altitude = float(light.get("altitude", 45))  # 仰角，度
@@ -360,20 +378,21 @@ class LightScriptBuilder:
         sz = -dz * dist
 
         var = f"lt_sun_{num}"
+        tgt_var = f"lt_sun_tgt_{num}"
 
         code = [
-            f"-- Sunlight (Directional Light). azimuth={azimuth:.1f}deg, altitude={altitude:.1f}deg",
-            f"-- Alternative: use Sunlight System for accurate solar positioning",
-            f"-- ss = sunlight(); ss.position = [0,0,0]; ss.time = ...",
-            f"local {var} = Directionallight()",
+            f"-- Sunlight (Target Directional Light). azimuth={azimuth:.1f}deg, "
+            f"altitude={altitude:.1f}deg",
+            f"local {tgt_var} = targetObject pos:[0, 0, 0]",
+            f"local {var} = TargetDirectionallight target:{tgt_var}",
             f"{var}.pos = [{sx:.2f}, {sy:.2f}, {sz:.2f}]",
-            f"{var}.target.pos = [0, 0, 0]",
             f"{var}.multiplier = {intensity:.3f}",
             f"{var}.rgb = (color 255 250 240)",  # 日光近似色
-            f"{var}.hotspot = 150000",
-            f"{var}.falloff = 160000",
+            f"try ({var}.hotspot = 150000) catch ()",
+            f"try ({var}.falloff = 160000) catch ()",
             f"{var}.castShadows = true",
-            f"{var}.shadowType = 0",  # 0 = Ray-Traced
+            f"try ({var}.shadowType = 0) catch ()  -- 0 = Ray-Traced",
             f'{var}.name = "Sunlight_{safe_name}"',
+            f'{tgt_var}.name = "Sunlight_{safe_name}.Target"',
         ]
-        return {"code": code, "vars": [var]}
+        return {"code": code, "vars": [var, tgt_var]}

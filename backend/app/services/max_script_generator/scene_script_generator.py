@@ -126,9 +126,9 @@ class SceneScriptGenerator:
         # ---- [1] 场景初始化 ----
         sections.append(self._section_init(renderer_type))
 
-        # ---- [2] 材质库 ----
+        # ---- [2] 材质库（仅声明 + 辅助函数；应用调用放到所有几何之后） ----
         sections.append(
-            self._mat_builder.build(
+            self._mat_builder.build_declarations(
                 materials=scene_data.get("materials", []),
                 rooms=scene_data.get("rooms", []),
             )
@@ -177,6 +177,14 @@ class SceneScriptGenerator:
             self._furn_builder.build(
                 furniture_list=scene_data.get("furniture", []),
                 asset_library_path=asset_library_path,
+            )
+        )
+
+        # ---- [8.5] 材质应用（必须在所有几何之后） ----
+        sections.append(
+            self._mat_builder.build_applications(
+                materials=scene_data.get("materials", []),
+                rooms=scene_data.get("rooms", []),
             )
         )
 
@@ -234,17 +242,21 @@ class SceneScriptGenerator:
             "animationRange = interval 0 100",
             "frameRate = 25",
             "",
-            "-- Gamma / LUT correction (2.2)",
-            "colorCorrectionMode = #gamma",
-            "displayGamma = 2.2",
-            "fileInGamma = 2.2",
-            "fileOutGamma = 2.2",
+            "-- Gamma / LUT correction (2.2) — guarded for older Max versions",
+            "try (",
+            "    colorCorrectionMode = #gamma",
+            "    displayGamma = 2.2",
+            "    fileInGamma = 2.2",
+            "    fileOutGamma = 2.2",
+            ") catch (",
+            '    format "Gamma setup skipped: %\\n" (getCurrentException())',
+            ")",
             "",
             "-- Background color (neutral gray)",
             "backgroundColor = (color 128 128 128)",
             "",
-            "-- Viewport layout: 4 equal viewports",
-            "viewport.setLayout #layout_4",
+            "-- Viewport layout (no-op in 3dsmaxbatch; guarded)",
+            "try (viewport.setLayout #layout_4) catch ()",
         ]
 
         # 渲染器检测
@@ -343,20 +355,28 @@ class SceneScriptGenerator:
                 "-- [9] Finalize Scene",
                 "-- ============================================================",
                 "",
-                "-- Select all objects and zoom extents",
-                "select all",
-                "max zoomext sel all",
-                "deselect all",
+                "-- Select all objects and zoom extents (guarded for batch mode)",
+                "try (",
+                "    max select all",
+                "    max zoomext sel all",
+                "    clearSelection()",
+                ") catch (",
+                '    format "Finalize selection step skipped: %\\n" '
+                "(getCurrentException())",
+                ")",
                 "",
-                "-- Update all viewports",
-                "viewport.setLayout #layout_4",
-                "viewport.setType #view_top index:1",
-                "viewport.setType #view_front index:2",
-                "viewport.setType #view_left index:3",
-                "viewport.setType #view_persp_user index:4",
-                "",
-                "-- Redraw",
-                "redrawViews()",
+                "-- Update viewports (no-op in batch mode, guard against errors)",
+                "try (",
+                "    viewport.setLayout #layout_4",
+                "    viewport.setType #view_top index:1",
+                "    viewport.setType #view_front index:2",
+                "    viewport.setType #view_left index:3",
+                "    viewport.setType #view_persp_user index:4",
+                "    redrawViews()",
+                ") catch (",
+                '    format "Viewport setup skipped (batch mode): %\\n" '
+                "(getCurrentException())",
+                ")",
                 "",
                 'print "Scene generation completed - all sections processed."',
             ]
