@@ -100,6 +100,13 @@ class ExecuteRequest(BaseModel):
         ),
         examples=[r"C:\output\scene.max", "scene.max"],
     )
+    embedded_output_max_path: str = Field(
+        default="",
+        description=(
+            "脚本内 saveMaxFile 嵌入的原始路径（通常是 backend 侧的 Linux 路径）。"
+            "worker 写入脚本前会把它字符串替换成本机的实际输出路径。"
+        ),
+    )
     timeout_seconds: int = Field(
         default=cfg.TIMEOUT_SECONDS,
         ge=10,
@@ -247,6 +254,19 @@ async def execute_maxscript(
     task_workdir = Path(cfg.WORK_DIR) / task_id
     task_workdir.mkdir(parents=True, exist_ok=True)
 
+    # ── 先解析输出路径（写脚本时需要做路径替换）──────────────────
+    # 如果 output_max_path 是绝对路径且其所在目录在本机存在 → 用它
+    # 否则取 basename 落到 task_workdir 下
+    raw_out = (request.output_max_path or "scene.max").strip()
+    out_path_obj = Path(raw_out)
+    if out_path_obj.is_absolute() and out_path_obj.parent.exists():
+        output_max_path = str(out_path_obj.resolve())
+    else:
+        out_name = out_path_obj.name or "scene.max"
+        if not out_name.lower().endswith(".max"):
+            out_name += ".max"
+        output_max_path = str(task_workdir / out_name)
+
     # ── 解析脚本来源 ────────────────────────────────────────────
     if request.script_content:
         # 跨机器场景：内容已在请求里，落地到本地
@@ -254,8 +274,26 @@ async def execute_maxscript(
         if not basename.lower().endswith((".ms", ".mse", ".mcr")):
             basename += ".ms"
         script_path = task_workdir / basename
+
+        # 脚本里 backend 嵌入的 Linux 路径替换成本机 Windows 路径
+        # （MAXScript 用 @"..." 字面字符串，所以单一引号字符串替换就够）
+        content = request.script_content
+        if request.embedded_output_max_path:
+            old = request.embedded_output_max_path
+            new = output_max_path
+            if old in content:
+                content = content.replace(old, new)
+                logger.info(
+                    f"Rewrote embedded output path: {old!r} → {new!r}"
+                )
+            else:
+                logger.warning(
+                    f"Embedded output path not found in script "
+                    f"(maybe already replaced): {old!r}"
+                )
+
         try:
-            script_path.write_text(request.script_content, encoding="utf-8")
+            script_path.write_text(content, encoding="utf-8")
         except OSError as exc:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -263,7 +301,7 @@ async def execute_maxscript(
             )
         logger.info(
             f"Script written to local workdir: {script_path} "
-            f"({len(request.script_content)} chars)"
+            f"({len(content)} chars)"
         )
     elif request.script_path:
         # 兼容模式：本机已有脚本文件
@@ -283,19 +321,6 @@ async def execute_maxscript(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Either 'script_content' or 'script_path' must be provided",
         )
-
-    # ── 解析输出路径 ────────────────────────────────────────────
-    # 如果 output_max_path 是绝对路径且其所在目录在本机存在 → 用它
-    # 否则取 basename 落到 task_workdir 下
-    raw_out = (request.output_max_path or "scene.max").strip()
-    out_path_obj = Path(raw_out)
-    if out_path_obj.is_absolute() and out_path_obj.parent.exists():
-        output_max_path = str(out_path_obj.resolve())
-    else:
-        out_name = out_path_obj.name or "scene.max"
-        if not out_name.lower().endswith(".max"):
-            out_name += ".max"
-        output_max_path = str(task_workdir / out_name)
 
     # 创建任务
     task: dict[str, Any] = {
@@ -492,23 +517,29 @@ def _build_command(task: dict[str, Any]) -> list[str]:
     """
     构造 3dsmaxbatch.exe 命令行参数。
 
-    3dsmaxbatch.exe 参数说明：
-      -sceneFile <file>     指定要执行的 MAXScript 文件
-      -outputName <file>    指定输出文件路径（可选）
-      -v <level>            日志详细级别 (0-5)
-      -silent               静默模式（不弹窗）
+    3dsmaxbatch.exe 用法要点：
+      - 直接执行 MAXScript 文件用 `-mxsString "fileIn @path"`
+        （`-sceneFile` 是给 .max 场景文件用的，不能用来执行 .ms 脚本，
+         否则 3dsmaxbatch 会立即以 rc=-100 退出）
+      - `-mip`        以批处理模式启动，不弹任何 UI
+      - `-v <level>`  日志详细级别 (0-5)
+      - `-outputName` 仅在用 `-sceneFile` 加载场景时有意义；本场景中脚本
+                      自己调用 saveMaxFile，不需要这个参数
     """
+    script_path = task["script_path"]
+    # MAXScript 字符串字面量 @"..." 里反斜杠不需要转义，唯一要转的是 "
+    # 我们用 @"..." 包裹路径
+    mxs_path = script_path.replace('"', '\\"')
+    mxs_string = f'fileIn @"{mxs_path}"'
+
     cmd: list[str] = [
         cfg.MAX_EXE_PATH,
-        "-sceneFile",
-        task["script_path"],
+        "-mip",
         "-v",
-        "5",  # 最详细日志，便于调试
-        "-silent",
+        "5",
+        "-mxsString",
+        mxs_string,
     ]
-
-    if task.get("output_max_path"):
-        cmd += ["-outputName", task["output_max_path"]]
 
     # 追加用户自定义参数
     cmd += task.get("extra_args", [])

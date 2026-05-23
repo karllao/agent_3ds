@@ -119,7 +119,11 @@ class MaxWorkerClient:
             ),
             # 兼容字段：仍保留路径用于日志
             "script_path": script_path,
+            # 期望的输出文件名（worker 自决定落地目录）
             "output_max_path": out_basename,
+            # 脚本里 saveMaxFile 嵌入的原始路径（Linux 路径），
+            # 让 worker 在写入前把它替换成本机 Windows 路径
+            "embedded_output_max_path": output_max_path,
             "timeout_seconds": timeout,
         }
         logger.info(
